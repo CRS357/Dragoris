@@ -37,17 +37,24 @@
       cursor: pointer;
     }
     button:hover { background: #4752c4; }
+    button:disabled { background: #747f8d; cursor: not-allowed; }
     .status-msg {
       color: #57f287;
       font-size: 13px;
       margin-top: 10px;
       display: none;
     }
+    #cooldown-timer {
+      color: #faa81a;
+      font-weight: bold;
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body>
   <h1>🐉 You petted Dragoris!</h1>
-  <p id="status">Updating pet count...</p>
+  <p id="status">Checking pet status...</p>
+  <p id="cooldown-timer"></p>
 
   <div class="name-box">
     <p id="box-title" style="margin-top: 0; font-weight: bold;">Enter your name to pet Dragoris:</p>
@@ -62,62 +69,103 @@
 
     let savedName = localStorage.getItem('dragoris_petter_name');
     let totalPets = "???";
+    let timerInterval = null;
 
-    // 1. Fetch & Update Counter (Runs independently)
-    fetch('https://countapi.mileshilliard.com/api/v1/hit/dragoris-pets-99')
-      .then(res => res.json())
-      .then(data => {
-        totalPets = data.value;
-        document.getElementById('status').innerText = `Dragoris has now been petted ${totalPets} times!`;
-      })
-      .catch(err => {
-        console.error("Counter API error:", err);
-        document.getElementById('status').innerText = "Dragoris loved the pets!";
-      });
+    // Check existing cooldown on load
+    checkCooldownAndExecute();
 
-    // 2. Flow Decision on Page Load
-    if (savedName) {
-      setupReturningUserUI();
-      sendDiscordNotification(savedName);
-    } else {
-      setupNewUserUI();
-    }
-
-    // Helper: Send Webhook to Discord reliably
-    function sendDiscordNotification(nameToSend) {
-      // Cooldown Check (30 seconds)
+    function checkCooldownAndExecute() {
       const lastPetTime = localStorage.getItem('dragoris_last_pet_time');
       const now = Date.now();
-      if (lastPetTime && (now - lastPetTime < 30000)) {
-        console.warn("Notification skipped: Cooldown active (30s).");
-        return;
-      }
+      const cooldownTime = 30000; // 30 seconds
 
+      if (lastPetTime && (now - lastPetTime < cooldownTime)) {
+        // COOLDOWN ACTIVE: Start live timer, DO NOT increment counter or send webhook yet
+        const remainingSeconds = Math.ceil((cooldownTime - (now - lastPetTime)) / 1000);
+        startCooldownTimer(remainingSeconds);
+        
+        if (savedName) setupReturningUserUI();
+        else setupNewUserUI();
+      } else {
+        // NO COOLDOWN: Process pet action immediately
+        processPetAction();
+      }
+    }
+
+    // Core function to hit counter and notify Discord
+    function processPetAction() {
+      localStorage.setItem('dragoris_last_pet_time', Date.now());
+      document.getElementById('cooldown-timer').innerText = "";
+
+      // 1. Fetch & Increment Counter API
+      fetch('https://countapi.mileshilliard.com/api/v1/hit/dragoris-pets-99')
+        .then(res => res.json())
+        .then(data => {
+          totalPets = data.value;
+          document.getElementById('status').innerText = `Dragoris has now been petted ${totalPets} times!`;
+          
+          // 2. Decide flow for notifications
+          if (savedName) {
+            setupReturningUserUI();
+            sendDiscordNotification(savedName, totalPets);
+          } else {
+            setupNewUserUI();
+          }
+
+          // 3. Start cooldown timer after execution
+          startCooldownTimer(30);
+        })
+        .catch(err => {
+          console.error("Counter API error:", err);
+          document.getElementById('status').innerText = "Dragoris loved the pets!";
+          if (savedName) sendDiscordNotification(savedName, "Unknown");
+          startCooldownTimer(30);
+        });
+    }
+
+    // Helper: Send Webhook to Discord
+    function sendDiscordNotification(nameToSend, count) {
       if (!WEBHOOK_URL || WEBHOOK_URL.includes("YOUR_WEBHOOK")) {
         console.error("Webhook URL is not configured properly.");
         return;
       }
 
-      localStorage.setItem('dragoris_last_pet_time', now);
-
       fetch(WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content: `🐉 **${nameToSend}** petted Dragoris!`
+          content: `🐉 **${nameToSend}** petted Dragoris! Total pets: **${count}**`
         })
       })
       .then(res => {
-        if (!res.ok) {
-          console.error(`Webhook returned status ${res.status}: ${res.statusText}`);
-        } else {
-          console.log("Webhook message delivered successfully!");
-        }
+        if (!res.ok) console.error(`Webhook error status ${res.status}`);
+        else console.log("Webhook delivered successfully!");
       })
       .catch(err => console.error("Webhook Fetch Error:", err));
     }
 
-    // UI State Functions
+    // Live Cooldown Timer Handler
+    function startCooldownTimer(seconds) {
+      clearInterval(timerInterval);
+      let timeLeft = seconds;
+      const timerDisplay = document.getElementById('cooldown-timer');
+
+      timerDisplay.innerText = `⏳ Please wait ${timeLeft}s before petting again...`;
+
+      timerInterval = setInterval(() => {
+        timeLeft--;
+        if (timeLeft > 0) {
+          timerDisplay.innerText = `⏳ Please wait ${timeLeft}s before petting again...`;
+        } else {
+          clearInterval(timerInterval);
+          timerDisplay.innerText = "";
+          // Automatically run pet action when timer ends
+          processPetAction();
+        }
+      }, 1000);
+    }
+
+    // UI Setup Functions
     function setupReturningUserUI() {
       document.getElementById('box-title').innerText = `Petting as: ${savedName}`;
       document.getElementById('username').value = savedName;
@@ -141,7 +189,14 @@
       const msg = document.getElementById('saved-msg');
 
       if (isFirstTime) {
-        sendDiscordNotification(savedName);
+        // First time submission: Process immediately if not on cooldown
+        const lastPetTime = localStorage.getItem('dragoris_last_pet_time');
+        const now = Date.now();
+        if (!lastPetTime || (now - lastPetTime >= 30000)) {
+          processPetAction();
+        } else {
+          sendDiscordNotification(savedName, totalPets);
+        }
         msg.innerText = "Name saved & pet sent!";
         setupReturningUserUI();
       } else {

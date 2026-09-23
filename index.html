@@ -3,7 +3,13 @@
 <head>
   <title>Petting Dragoris...</title>
   <style>
-    body { font-family: sans-serif; text-align: center; background: #2f3136; color: white; padding-top: 50px; }
+    body { 
+      font-family: sans-serif; 
+      text-align: center; 
+      background: #2f3136; 
+      color: white; 
+      padding-top: 50px; 
+    }
     h1 { color: #5865f2; }
   </style>
 </head>
@@ -12,11 +18,22 @@
   <p id="status">Updating pet count...</p>
 
   <script>
-    // Hits the counter in the background
+    const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1552401405992771705/Z3LaLFWIZOwP3EW1SWaC3qW_1la64S9OtoMQwzLDu1tUxPgGHVdm8DIELmmFUBko-ayj";
+
+    // 1. Hit the counter API
     fetch('https://countapi.mileshilliard.com/api/v1/hit/dragoris-pets-99')
       .then(res => res.json())
       .then(data => {
         document.getElementById('status').innerText = `Dragoris has now been petted ${data.value} times!`;
+        
+        // 2. Send notification to your Discord server
+        fetch(DISCORD_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: `🐉 **Someone petted Dragoris!** Total pets: **${data.value}**`
+          })
+        });
       })
       .catch(() => {
         document.getElementById('status').innerText = "Dragoris loved the pets!";

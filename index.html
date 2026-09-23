@@ -57,60 +57,73 @@
   </div>
 
   <script>
-    // REPLACE THIS WITH YOUR PROXY OR DISCORD WEBHOOK URL
+    // REPLACE WITH YOUR HOOKDECK / PROXY / WEBHOOK URL
     const WEBHOOK_URL = "https://discord.com/api/webhooks/1552401405992771705/Z3LaLFWIZOwP3EW1SWaC3qW_1la64S9OtoMQwzLDu1tUxPgGHVdm8DIELmmFUBko-ayj";
 
     let savedName = localStorage.getItem('dragoris_petter_name');
-    let totalPets = 0;
+    let totalPets = "???";
 
-    // Check cooldown
-    const lastPetTime = localStorage.getItem('dragoris_last_pet_time');
-    const now = Date.now();
-    const isCooldownActive = lastPetTime && (now - lastPetTime < 30000);
-
-    // 1. Hit Counter API on load
+    // 1. Fetch & Update Counter (Runs independently)
     fetch('https://countapi.mileshilliard.com/api/v1/hit/dragoris-pets-99')
       .then(res => res.json())
       .then(data => {
         totalPets = data.value;
         document.getElementById('status').innerText = `Dragoris has now been petted ${totalPets} times!`;
-        
-        // 2. Flow Decision: If name exists, send notification immediately
-        if (savedName) {
-          setupReturningUserUI();
-          sendDiscordNotification(savedName);
-        } else {
-          setupNewUserUI();
-        }
       })
-      .catch(() => {
+      .catch(err => {
+        console.error("Counter API error:", err);
         document.getElementById('status').innerText = "Dragoris loved the pets!";
-        if (!savedName) setupNewUserUI();
       });
 
-    // Helper: Send Discord Webhook Notice
-    function sendDiscordNotification(nameToSend) {
-      if (isCooldownActive || !WEBHOOK_URL || WEBHOOK_URL.includes("YOUR_WEBHOOK")) return;
+    // 2. Flow Decision on Page Load
+    if (savedName) {
+      setupReturningUserUI();
+      sendDiscordNotification(savedName);
+    } else {
+      setupNewUserUI();
+    }
 
-      localStorage.setItem('dragoris_last_pet_time', Date.now());
+    // Helper: Send Webhook to Discord reliably
+    function sendDiscordNotification(nameToSend) {
+      // Cooldown Check (30 seconds)
+      const lastPetTime = localStorage.getItem('dragoris_last_pet_time');
+      const now = Date.now();
+      if (lastPetTime && (now - lastPetTime < 30000)) {
+        console.warn("Notification skipped: Cooldown active (30s).");
+        return;
+      }
+
+      if (!WEBHOOK_URL || WEBHOOK_URL.includes("YOUR_WEBHOOK")) {
+        console.error("Webhook URL is not configured properly.");
+        return;
+      }
+
+      localStorage.setItem('dragoris_last_pet_time', now);
 
       fetch(WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content: `🐉 **${nameToSend}** petted Dragoris! Total pets: **${totalPets}**`
+          content: `🐉 **${nameToSend}** petted Dragoris!`
         })
-      });
+      })
+      .then(res => {
+        if (!res.ok) {
+          console.error(`Webhook returned status ${res.status}: ${res.statusText}`);
+        } else {
+          console.log("Webhook message delivered successfully!");
+        }
+      })
+      .catch(err => console.error("Webhook Fetch Error:", err));
     }
 
-    // UI Setup for returning users (has saved name)
+    // UI State Functions
     function setupReturningUserUI() {
       document.getElementById('box-title').innerText = `Petting as: ${savedName}`;
       document.getElementById('username').value = savedName;
       document.getElementById('action-btn').innerText = "Update Name";
     }
 
-    // UI Setup for first-time users (no saved name)
     function setupNewUserUI() {
       document.getElementById('box-title').innerText = "What's your name?";
       document.getElementById('action-btn').innerText = "Save & Send Pet!";
@@ -128,12 +141,10 @@
       const msg = document.getElementById('saved-msg');
 
       if (isFirstTime) {
-        // First time submission: Send notification now
         sendDiscordNotification(savedName);
         msg.innerText = "Name saved & pet sent!";
         setupReturningUserUI();
       } else {
-        // Returning user editing name: Update saved name for next visit
         msg.innerText = "Name updated for next pet!";
         document.getElementById('box-title').innerText = `Petting as: ${savedName}`;
       }

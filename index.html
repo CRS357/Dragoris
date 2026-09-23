@@ -12,6 +12,7 @@
       padding-top: 50px; 
     }
     h1 { color: #5865f2; }
+    .dragon-icon { cursor: pointer; user-select: none; }
     .name-box {
       margin-top: 20px;
       background: #36393f;
@@ -37,7 +38,6 @@
       cursor: pointer;
     }
     button:hover { background: #4752c4; }
-    button:disabled { background: #747f8d; cursor: not-allowed; }
     .status-msg {
       color: #57f287;
       font-size: 13px;
@@ -52,7 +52,7 @@
   </style>
 </head>
 <body>
-  <h1>🐉 You petted Dragoris!</h1>
+  <h1><span class="dragon-icon" ondblclick="secretResetPrompt()">🐉</span> You petted Dragoris!</h1>
   <p id="status">Checking pet status...</p>
   <p id="cooldown-timer"></p>
 
@@ -66,12 +66,14 @@
   <script>
     // REPLACE WITH YOUR HOOKDECK / PROXY / WEBHOOK URL
     const WEBHOOK_URL = "https://discord.com/api/webhooks/1552401405992771705/Z3LaLFWIZOwP3EW1SWaC3qW_1la64S9OtoMQwzLDu1tUxPgGHVdm8DIELmmFUBko-ayj";
+    // SECRET PASSWORD TO RESET COUNTER (Change this to whatever you want!)
+    const RESET_PASSWORD = "dragon123";
 
+    const COUNTER_KEY = "dragoris-pets-99";
     let savedName = localStorage.getItem('dragoris_petter_name');
     let totalPets = "???";
     let timerInterval = null;
 
-    // Check existing cooldown on load
     checkCooldownAndExecute();
 
     function checkCooldownAndExecute() {
@@ -80,31 +82,44 @@
       const cooldownTime = 30000; // 30 seconds
 
       if (lastPetTime && (now - lastPetTime < cooldownTime)) {
-        // COOLDOWN ACTIVE: Start live timer, DO NOT increment counter or send webhook yet
+        // ON COOLDOWN: Read current count without incrementing (+1)
+        fetchReadOnlyCounter();
+
         const remainingSeconds = Math.ceil((cooldownTime - (now - lastPetTime)) / 1000);
         startCooldownTimer(remainingSeconds);
-        
+
         if (savedName) setupReturningUserUI();
         else setupNewUserUI();
       } else {
-        // NO COOLDOWN: Process pet action immediately
+        // NOT ON COOLDOWN: Increment counter and send Discord notification
         processPetAction();
       }
     }
 
-    // Core function to hit counter and notify Discord
+    // Read counter without incrementing
+    function fetchReadOnlyCounter() {
+      fetch(`https://countapi.mileshilliard.com/api/v1/get/${COUNTER_KEY}`)
+        .then(res => res.json())
+        .then(data => {
+          totalPets = data.value;
+          document.getElementById('status').innerText = `Dragoris has been petted ${totalPets} times!`;
+        })
+        .catch(() => {
+          document.getElementById('status').innerText = "Dragoris loved the pets!";
+        });
+    }
+
+    // Core function to hit counter (+1) and notify Discord
     function processPetAction() {
       localStorage.setItem('dragoris_last_pet_time', Date.now());
       document.getElementById('cooldown-timer').innerText = "";
 
-      // 1. Fetch & Increment Counter API
-      fetch('https://countapi.mileshilliard.com/api/v1/hit/dragoris-pets-99')
+      fetch(`https://countapi.mileshilliard.com/api/v1/hit/${COUNTER_KEY}`)
         .then(res => res.json())
         .then(data => {
           totalPets = data.value;
           document.getElementById('status').innerText = `Dragoris has now been petted ${totalPets} times!`;
-          
-          // 2. Decide flow for notifications
+
           if (savedName) {
             setupReturningUserUI();
             sendDiscordNotification(savedName, totalPets);
@@ -112,7 +127,6 @@
             setupNewUserUI();
           }
 
-          // 3. Start cooldown timer after execution
           startCooldownTimer(30);
         })
         .catch(err => {
@@ -123,28 +137,7 @@
         });
     }
 
-    // Helper: Send Webhook to Discord
-    function sendDiscordNotification(nameToSend, count) {
-      if (!WEBHOOK_URL || WEBHOOK_URL.includes("YOUR_WEBHOOK")) {
-        console.error("Webhook URL is not configured properly.");
-        return;
-      }
-
-      fetch(WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: `🐉 **${nameToSend}** petted Dragoris! Total pets: **${count}**`
-        })
-      })
-      .then(res => {
-        if (!res.ok) console.error(`Webhook error status ${res.status}`);
-        else console.log("Webhook delivered successfully!");
-      })
-      .catch(err => console.error("Webhook Fetch Error:", err));
-    }
-
-    // Live Cooldown Timer Handler
+    // Live Cooldown Timer (Stops at 0 without auto-restarting)
     function startCooldownTimer(seconds) {
       clearInterval(timerInterval);
       let timeLeft = seconds;
@@ -158,11 +151,50 @@
           timerDisplay.innerText = `⏳ Please wait ${timeLeft}s before petting again...`;
         } else {
           clearInterval(timerInterval);
-          timerDisplay.innerText = "";
-          // Automatically run pet action when timer ends
-          processPetAction();
+          timerDisplay.innerText = "✨ Ready to pet again! (Refresh or click below)";
         }
       }, 1000);
+    }
+
+    // SECRET RESET METHOD: Double-click 🐉 to trigger
+    function secretResetPrompt() {
+      const pass = prompt("🔐 Enter Secret Reset Password:");
+      if (pass === RESET_PASSWORD) {
+        // Reset counter on server
+        fetch(`https://countapi.mileshilliard.com/api/v1/set/${COUNTER_KEY}?value=0`)
+          .then(res => res.json())
+          .then(() => {
+            alert("Counter has been reset to 0!");
+            localStorage.removeItem('dragoris_last_pet_time');
+            
+            // Send reset notification to Discord
+            if (WEBHOOK_URL && !WEBHOOK_URL.includes("YOUR_WEBHOOK")) {
+              fetch(WEBHOOK_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  content: `⚠️ **Dragoris pet count was reset to 0 by ${savedName || "Admin"}!**`
+                })
+              });
+            }
+            location.reload();
+          });
+      } else if (pass !== null) {
+        alert("Incorrect password!");
+      }
+    }
+
+    // Helper: Send Webhook
+    function sendDiscordNotification(nameToSend, count) {
+      if (!WEBHOOK_URL || WEBHOOK_URL.includes("YOUR_WEBHOOK")) return;
+
+      fetch(WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: `🐉 **${nameToSend}** petted Dragoris! Total pets: **${count}**`
+        })
+      });
     }
 
     // UI Setup Functions
@@ -177,11 +209,11 @@
       document.getElementById('action-btn').innerText = "Save & Send Pet!";
     }
 
-    // Button Action Handler
+    // Button Handler
     function handleButtonClick() {
       const inputVal = document.getElementById('username').value.trim();
       const newName = inputVal !== "" ? inputVal : "Anonymous";
-      
+
       const isFirstTime = !savedName;
       savedName = newName;
       localStorage.setItem('dragoris_petter_name', savedName);
@@ -189,7 +221,6 @@
       const msg = document.getElementById('saved-msg');
 
       if (isFirstTime) {
-        // First time submission: Process immediately if not on cooldown
         const lastPetTime = localStorage.getItem('dragoris_last_pet_time');
         const now = Date.now();
         if (!lastPetTime || (now - lastPetTime >= 30000)) {

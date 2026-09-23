@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Petting Dragoris...</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; background: #2f3136; color: white; padding-top: 50px; }
+    h1 { color: #5865f2; }
+  </style>
+</head>
+<body>
+  <h1>🐉 You petted Dragoris!</h1>
+  <p id="status">Updating pet count...</p>
+
+  <script>
+    // Hits the counter in the background
+    fetch('https://countapi.mileshilliard.com/api/v1/hit/dragoris-pets-99')
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById('status').innerText = `Dragoris has now been petted ${data.value} times!`;
+      })
+      .catch(() => {
+        document.getElementById('status').innerText = "Dragoris loved the pets!";
+      });
+  </script>
+</body>
+</html>

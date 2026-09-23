@@ -34,6 +34,7 @@
             content: `🐉 **Someone petted Dragoris!** Total pets: **${data.value}**`
           })
         });
+        console.log("SENT!");
       })
       .catch(() => {
         document.getElementById('status').innerText = "Dragoris loved the pets!";

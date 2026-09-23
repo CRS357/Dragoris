@@ -1,6 +1,7 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
   <title>Petting Dragoris...</title>
   <style>
     body { 
@@ -11,30 +12,85 @@
       padding-top: 50px; 
     }
     h1 { color: #5865f2; }
+    .name-box {
+      margin-top: 20px;
+      background: #36393f;
+      display: inline-block;
+      padding: 15px 25px;
+      border-radius: 8px;
+    }
+    input {
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #202225;
+      background: #40444b;
+      color: white;
+      font-size: 14px;
+    }
+    button {
+      padding: 8px 15px;
+      border-radius: 4px;
+      border: none;
+      background: #5865f2;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:hover { background: #4752c4; }
   </style>
 </head>
 <body>
   <h1>🐉 You petted Dragoris!</h1>
   <p id="status">Updating pet count...</p>
 
-  <script>
-    const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1552401405992771705/Z3LaLFWIZOwP3EW1SWaC3qW_1la64S9OtoMQwzLDu1tUxPgGHVdm8DIELmmFUBko-ayj";
+  <div class="name-box">
+    <p style="margin-top: 0;"><strong>Who is petting Dragoris?</strong></p>
+    <input type="text" id="username" placeholder="Anonymous Dragoris Fan">
+    <button onclick="saveName()">Save Name</button>
+    <p id="saved-msg" style="color: #57f287; font-size: 12px; display: none;">Name saved!</p>
+  </div>
 
-    // 1. Hit the counter API
+  <script>
+    // REPLACE THIS WITH YOUR PROXY URL OR NEW WEBHOOK URL
+    const WEBHOOK_URL = "https://discord.com/api/webhooks/1552401405992771705/Z3LaLFWIZOwP3EW1SWaC3qW_1la64S9OtoMQwzLDu1tUxPgGHVdm8DIELmmFUBko-ayj";
+
+    // 1. Load saved name from local storage if present
+    let savedName = localStorage.getItem('dragoris_petter_name') || "Anonymous";
+    document.getElementById('username').value = savedName === "Anonymous" ? "" : savedName;
+
+    function saveName() {
+      const inputName = document.getElementById('username').value.trim();
+      savedName = inputName !== "" ? inputName : "Anonymous";
+      localStorage.setItem('dragoris_petter_name', savedName);
+      
+      const msg = document.getElementById('saved-msg');
+      msg.style.display = "block";
+      setTimeout(() => { msg.style.display = "none"; }, 2000);
+    }
+
+    // 2. Prevent spamming notifications (30-second cooldown per browser)
+    const lastPetTime = localStorage.getItem('dragoris_last_pet_time');
+    const now = Date.now();
+    const isCooldownActive = lastPetTime && (now - lastPetTime < 30000);
+
+    // 3. Hit the counter API
     fetch('https://countapi.mileshilliard.com/api/v1/hit/dragoris-pets-99')
       .then(res => res.json())
       .then(data => {
         document.getElementById('status').innerText = `Dragoris has now been petted ${data.value} times!`;
         
-        // 2. Send notification to your Discord server
-        fetch(DISCORD_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content: `🐉 **Someone petted Dragoris!** Total pets: **${data.value}**`
-          })
-        });
-        console.log("SENT!");
+        // Only send Discord notification if not on cooldown
+        if (!isCooldownActive && WEBHOOK_URL && !WEBHOOK_URL.includes("YOUR_WEBHOOK")) {
+          localStorage.setItem('dragoris_last_pet_time', now);
+
+          fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              content: `🐉 **${savedName}** petted Dragoris! Total pets: **${data.value}**`
+            })
+          });
+        }
       })
       .catch(() => {
         document.getElementById('status').innerText = "Dragoris loved the pets!";
